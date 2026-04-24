@@ -642,6 +642,62 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+const duplicateFlavor = async () => {
+  if (!selectedFlavor) return;
+
+  setSaving(true);
+  setError("");
+
+  const newSlug = `${selectedFlavor.slug}-copy-${Date.now().toString().slice(-4)}`;
+
+  const { data: newFlavor, error: flavorErr } = await supabase
+    .from("humor_flavors")
+    .insert({
+      slug: newSlug,
+      description: selectedFlavor.description,
+      created_by_user_id: userId,
+      modified_by_user_id: userId,
+    })
+    .select()
+    .single();
+
+  if (flavorErr) {
+    setError(flavorErr.message);
+    setSaving(false);
+    return;
+  }
+
+  if (steps.length > 0) {
+    const newSteps = steps.map((s) => ({
+      humor_flavor_id: newFlavor.id,
+      description: s.description,
+      llm_system_prompt: s.llm_system_prompt,
+      llm_user_prompt: s.llm_user_prompt,
+      llm_temperature: s.llm_temperature,
+      llm_model_id: s.llm_model_id,
+      llm_input_type_id: s.llm_input_type_id,
+      llm_output_type_id: s.llm_output_type_id,
+      humor_flavor_step_type_id: s.humor_flavor_step_type_id,
+      order_by: s.order_by,
+      created_by_user_id: userId,
+      modified_by_user_id: userId,
+    }));
+
+    const { error: stepsErr } = await supabase
+      .from("humor_flavor_steps")
+      .insert(newSteps);
+
+    if (stepsErr) {
+      setError(stepsErr.message);
+      setSaving(false);
+      return;
+    }
+  }
+
+  setSaving(false);
+  await loadFlavors();
+  alert(`Duplicated as "${newSlug}"!`);
+}
 
       {/* Step Modal - Create/Edit */}
       {(stepModal === 'create' || stepModal === 'edit') && (
