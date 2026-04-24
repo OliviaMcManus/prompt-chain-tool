@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const [testResults, setTestResults] = useState<any[]>([])
   const [testError, setTestError] = useState('')
   const [token, setToken] = useState('')
+  const [userId, setUserId] = useState('')
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -48,6 +49,7 @@ export default function DashboardPage() {
     loadImages()
     supabase.auth.getSession().then(({ data: { session } }) => {
       setToken(session?.access_token ?? '')
+      setUserId(session?.user?.id ?? '')
     })
   }, [])
 
@@ -123,6 +125,36 @@ export default function DashboardPage() {
     if (flavorModal === 'edit' && selectedFlavor) {
       setSelectedFlavor({ ...selectedFlavor, ...payload })
     }
+  }
+
+  const duplicateFlavor = async () => {
+    if (!selectedFlavor) return
+    setSaving(true); setError('')
+    const newSlug = `${selectedFlavor.slug}-copy-${Date.now().toString().slice(-4)}`
+    const { data: newFlavor, error: flavorErr } = await supabase
+      .from('humor_flavors')
+      .insert({ slug: newSlug, description: selectedFlavor.description, created_by_user_id: userId, modified_by_user_id: userId })
+      .select().single()
+    if (flavorErr) { setError(flavorErr.message); setSaving(false); return }
+    if (steps.length > 0) {
+      const newSteps = steps.map(s => ({
+        humor_flavor_id: newFlavor.id,
+        description: s.description,
+        llm_system_prompt: s.llm_system_prompt,
+        llm_user_prompt: s.llm_user_prompt,
+        llm_temperature: s.llm_temperature,
+        llm_model_id: s.llm_model_id,
+        llm_input_type_id: s.llm_input_type_id,
+        llm_output_type_id: s.llm_output_type_id,
+        humor_flavor_step_type_id: s.humor_flavor_step_type_id,
+        order_by: s.order_by,
+        created_by_user_id: userId,
+        modified_by_user_id: userId,
+      }))
+      const { error: stepsErr } = await supabase.from('humor_flavor_steps').insert(newSteps)
+      if (stepsErr) { setError(stepsErr.message); setSaving(false); return }
+    }
+    setSaving(false); loadFlavors(); alert(`Duplicated as "${newSlug}"!`)
   }
 
   const deleteFlavor = async () => {
@@ -246,10 +278,7 @@ export default function DashboardPage() {
   return (
     <div style={{ padding: '24px 28px', animation: 'fadeIn 0.3s ease' }}>
       <div style={{ marginBottom: '24px' }}>
-        <div style={{
-          fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.25em',
-          textTransform: 'uppercase', marginBottom: '4px',
-        }}>
+        <div style={{ fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.25em', textTransform: 'uppercase', marginBottom: '4px' }}>
           Humor Flavor Manager
         </div>
         <h1 style={{ fontFamily: 'var(--sans)', fontSize: '24px', fontWeight: '800', color: 'var(--text)' }}>
@@ -261,50 +290,31 @@ export default function DashboardPage() {
 
         {/* LEFT: Flavor List */}
         <div style={panel}>
-          <div style={{
-            padding: '14px 16px', borderBottom: '1px solid var(--border)',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <span style={{
-              fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em',
-              textTransform: 'uppercase', color: 'var(--text-dim)',
-            }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>
               Humor Flavors
             </span>
             <button className="btn btn-primary" onClick={openCreateFlavor} style={{ padding: '3px 10px' }}>+</button>
           </div>
 
           {loading ? (
-            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>
-              Loading…
-            </div>
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>Loading…</div>
           ) : flavors.map(f => (
-            <div
-              key={f.id}
-              onClick={() => setSelectedFlavor(f)}
-              style={{
-                padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid var(--border)',
-                background: selectedFlavor?.id === f.id ? 'var(--bg-hover)' : 'transparent',
-                borderLeft: selectedFlavor?.id === f.id ? '2px solid var(--accent)' : '2px solid transparent',
-                transition: 'all 0.15s',
-              }}
-            >
-              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text)', marginBottom: '2px' }}>
-                {f.slug}
-              </div>
-              <div style={{
-                fontSize: '10px', color: 'var(--text-dimmer)',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
+            <div key={f.id} onClick={() => setSelectedFlavor(f)} style={{
+              padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+              background: selectedFlavor?.id === f.id ? 'var(--bg-hover)' : 'transparent',
+              borderLeft: selectedFlavor?.id === f.id ? '2px solid var(--accent)' : '2px solid transparent',
+              transition: 'all 0.15s',
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text)', marginBottom: '2px' }}>{f.slug}</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-dimmer)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {f.description || 'No description'}
               </div>
             </div>
           ))}
 
           {flavors.length === 0 && !loading && (
-            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>
-              No flavors yet.
-            </div>
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>No flavors yet.</div>
           )}
         </div>
 
@@ -316,16 +326,10 @@ export default function DashboardPage() {
             <div style={{ ...panel, padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <div style={{
-                    fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.2em',
-                    textTransform: 'uppercase', marginBottom: '4px',
-                  }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '4px' }}>
                     Flavor #{selectedFlavor.id}
                   </div>
-                  <div style={{
-                    fontFamily: 'var(--sans)', fontSize: '20px', fontWeight: '800',
-                    color: 'var(--accent)', marginBottom: '4px',
-                  }}>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: '20px', fontWeight: '800', color: 'var(--accent)', marginBottom: '4px' }}>
                     {selectedFlavor.slug}
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
@@ -333,6 +337,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn" onClick={duplicateFlavor} disabled={saving} style={{ color: 'var(--teal)', borderColor: 'var(--teal)' }}>⎘ Duplicate</button>
                   <button className="btn" onClick={() => openEditFlavor(selectedFlavor)}>Edit</button>
                   <button className="btn btn-danger" onClick={openDeleteFlavor}>Delete</button>
                 </div>
@@ -341,36 +346,22 @@ export default function DashboardPage() {
 
             {/* Steps */}
             <div style={panel}>
-              <div style={{
-                padding: '14px 16px', borderBottom: '1px solid var(--border)',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}>
-                <span style={{
-                  fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em',
-                  textTransform: 'uppercase', color: 'var(--text-dim)',
-                }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>
                   Steps ({steps.length})
                 </span>
                 <button className="btn btn-primary" onClick={openCreateStep}>+ Add Step</button>
               </div>
 
               {steps.length === 0 && (
-                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>
-                  No steps yet.
-                </div>
+                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>No steps yet.</div>
               )}
 
               {steps.map((s, idx) => (
                 <div key={s.id} style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{
-                    display: 'flex', justifyContent: 'space-between',
-                    alignItems: 'flex-start', marginBottom: '10px',
-                  }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{
-                        background: 'var(--accent)', color: '#fff', borderRadius: '4px',
-                        padding: '2px 8px', fontSize: '11px', fontWeight: '700',
-                      }}>
+                      <span style={{ background: 'var(--accent)', color: '#fff', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: '700' }}>
                         Step {s.order_by}
                       </span>
                       <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text)' }}>
@@ -387,17 +378,8 @@ export default function DashboardPage() {
 
                   {s.llm_system_prompt && (
                     <div style={{ marginBottom: '8px' }}>
-                      <div style={{
-                        fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.15em',
-                        textTransform: 'uppercase', marginBottom: '3px',
-                      }}>
-                        System Prompt
-                      </div>
-                      <div style={{
-                        fontSize: '11px', color: 'var(--text-dim)', background: 'var(--bg)',
-                        padding: '8px', borderRadius: '4px', whiteSpace: 'pre-wrap',
-                        maxHeight: '80px', overflow: 'auto',
-                      }}>
+                      <div style={{ fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '3px' }}>System Prompt</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)', background: 'var(--bg)', padding: '8px', borderRadius: '4px', whiteSpace: 'pre-wrap', maxHeight: '80px', overflow: 'auto' }}>
                         {s.llm_system_prompt}
                       </div>
                     </div>
@@ -405,43 +387,18 @@ export default function DashboardPage() {
 
                   {s.llm_user_prompt && (
                     <div>
-                      <div style={{
-                        fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.15em',
-                        textTransform: 'uppercase', marginBottom: '3px',
-                      }}>
-                        User Prompt
-                      </div>
-                      <div style={{
-                        fontSize: '11px', color: 'var(--text-dim)', background: 'var(--bg)',
-                        padding: '8px', borderRadius: '4px', whiteSpace: 'pre-wrap',
-                        maxHeight: '80px', overflow: 'auto',
-                      }}>
+                      <div style={{ fontSize: '9px', color: 'var(--text-dimmer)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '3px' }}>User Prompt</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)', background: 'var(--bg)', padding: '8px', borderRadius: '4px', whiteSpace: 'pre-wrap', maxHeight: '80px', overflow: 'auto' }}>
                         {s.llm_user_prompt}
                       </div>
                     </div>
                   )}
 
                   <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-                    {s.llm_temperature != null && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>
-                        temp: <span style={{ color: 'var(--teal)' }}>{s.llm_temperature}</span>
-                      </span>
-                    )}
-                    {s.llm_model_id != null && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>
-                        model: <span style={{ color: 'var(--blue)' }}>{s.llm_model_id}</span>
-                      </span>
-                    )}
-                    {s.llm_input_type_id != null && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>
-                        in: <span style={{ color: 'var(--text-dim)' }}>{s.llm_input_type_id}</span>
-                      </span>
-                    )}
-                    {s.llm_output_type_id != null && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>
-                        out: <span style={{ color: 'var(--text-dim)' }}>{s.llm_output_type_id}</span>
-                      </span>
-                    )}
+                    {s.llm_temperature != null && <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>temp: <span style={{ color: 'var(--teal)' }}>{s.llm_temperature}</span></span>}
+                    {s.llm_model_id != null && <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>model: <span style={{ color: 'var(--blue)' }}>{s.llm_model_id}</span></span>}
+                    {s.llm_input_type_id != null && <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>in: <span style={{ color: 'var(--text-dim)' }}>{s.llm_input_type_id}</span></span>}
+                    {s.llm_output_type_id != null && <span style={{ fontSize: '10px', color: 'var(--text-dimmer)' }}>out: <span style={{ color: 'var(--text-dim)' }}>{s.llm_output_type_id}</span></span>}
                   </div>
                 </div>
               ))}
@@ -450,72 +407,39 @@ export default function DashboardPage() {
             {/* Test Flavor */}
             <div style={panel}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{
-                  fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em',
-                  textTransform: 'uppercase', color: 'var(--text-dim)',
-                }}>
-                  Test Flavor
-                </span>
+                <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>Test Flavor</span>
               </div>
               <div style={{ padding: '16px' }}>
                 <div style={{ marginBottom: '12px' }}>
-                  <div style={{
-                    fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '6px',
-                    letterSpacing: '0.1em', textTransform: 'uppercase',
-                  }}>
-                    Select Test Image
-                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Select Test Image</div>
                   <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px' }}>
                     {images.slice(0, 10).map(img => (
-                      <div
-                        key={img.id}
-                        onClick={() => setSelectedImageId(img.id)}
-                        style={{
-                          flexShrink: 0, width: '80px', height: '80px', borderRadius: '6px',
-                          overflow: 'hidden', cursor: 'pointer',
-                          border: selectedImageId === img.id
-                            ? '2px solid var(--accent)'
-                            : '2px solid var(--border)',
-                        }}
-                      >
+                      <div key={img.id} onClick={() => setSelectedImageId(img.id)} style={{
+                        flexShrink: 0, width: '80px', height: '80px', borderRadius: '6px',
+                        overflow: 'hidden', cursor: 'pointer',
+                        border: selectedImageId === img.id ? '2px solid var(--accent)' : '2px solid var(--border)',
+                      }}>
                         <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <button
-                  className="btn btn-primary"
-                  onClick={testFlavor}
-                  disabled={testLoading || !selectedImageId}
-                  style={{ marginBottom: '12px' }}
-                >
+                <button className="btn btn-primary" onClick={testFlavor} disabled={testLoading || !selectedImageId} style={{ marginBottom: '12px' }}>
                   {testLoading ? 'Generating…' : `Test "${selectedFlavor.slug}" →`}
                 </button>
 
                 {testError && (
-                  <div style={{
-                    background: 'var(--red-dim)', color: 'var(--red)', padding: '10px',
-                    borderRadius: '4px', fontSize: '12px', marginBottom: '12px',
-                  }}>
+                  <div style={{ background: 'var(--red-dim)', color: 'var(--red)', padding: '10px', borderRadius: '4px', fontSize: '12px', marginBottom: '12px' }}>
                     {testError}
                   </div>
                 )}
 
                 {testResults.length > 0 && (
                   <div>
-                    <div style={{
-                      fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '8px',
-                      letterSpacing: '0.1em', textTransform: 'uppercase',
-                    }}>
-                      Generated Captions
-                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '8px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Generated Captions</div>
                     {testResults.map((r, i) => (
-                      <div key={i} style={{
-                        padding: '10px 14px', background: 'var(--bg)', borderRadius: '4px',
-                        marginBottom: '8px', fontSize: '13px', color: 'var(--text)',
-                        fontFamily: 'var(--sans)', lineHeight: 1.5,
-                      }}>
+                      <div key={i} style={{ padding: '10px 14px', background: 'var(--bg)', borderRadius: '4px', marginBottom: '8px', fontSize: '13px', color: 'var(--text)', fontFamily: 'var(--sans)', lineHeight: 1.5 }}>
                         {r.content ?? r}
                       </div>
                     ))}
@@ -527,26 +451,16 @@ export default function DashboardPage() {
             {/* Captions */}
             <div style={panel}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{
-                  fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em',
-                  textTransform: 'uppercase', color: 'var(--text-dim)',
-                }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>
                   Captions Produced by This Flavor
                 </span>
               </div>
               {captionsLoading ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>
-                  Loading…
-                </div>
+                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>Loading…</div>
               ) : flavorCaptions.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>
-                  No captions yet for this flavor.
-                </div>
+                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dimmer)', fontSize: '11px' }}>No captions yet for this flavor.</div>
               ) : flavorCaptions.map(c => (
-                <div key={c.id} style={{
-                  padding: '12px 16px', borderBottom: '1px solid var(--border)',
-                  fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--sans)',
-                }}>
+                <div key={c.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--sans)' }}>
                   {c.content}
                 </div>
               ))}
@@ -556,54 +470,28 @@ export default function DashboardPage() {
         ) : (
           <div style={{ ...panel, padding: '64px', textAlign: 'center' }}>
             <div style={{ fontSize: '32px', marginBottom: '12px' }}>←</div>
-            <div style={{ fontSize: '13px', color: 'var(--text-dimmer)' }}>
-              Select a humor flavor to view and edit its steps
-            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-dimmer)' }}>Select a humor flavor to view and edit its steps</div>
           </div>
         )}
       </div>
 
       {/* Flavor Modal - Create/Edit */}
       {(flavorModal === 'create' || flavorModal === 'edit') && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-        }}>
-          <div style={{
-            background: 'var(--bg-panel)', border: '1px solid var(--border)',
-            borderRadius: '8px', width: '440px', padding: '24px',
-          }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: '8px', width: '440px', padding: '24px' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '13px', fontWeight: '600', marginBottom: '20px' }}>
               {flavorModal === 'create' ? 'New Humor Flavor' : 'Edit Humor Flavor'}
             </div>
-            {error && (
-              <div style={{
-                background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px',
-                marginBottom: '16px', fontSize: '12px', borderRadius: '4px',
-              }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px', marginBottom: '16px', fontSize: '12px', borderRadius: '4px' }}>{error}</div>}
             {[['slug', 'Slug'], ['description', 'Description']].map(([k, l]) => (
               <div key={k} style={{ marginBottom: '12px' }}>
-                <div style={{
-                  fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '4px',
-                  letterSpacing: '0.1em', textTransform: 'uppercase',
-                }}>
-                  {l}
-                </div>
-                <input
-                  className="input"
-                  value={(flavorForm as any)[k]}
-                  onChange={e => setFlavorForm(v => ({ ...v, [k]: e.target.value }))}
-                />
+                <div style={{ fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '4px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{l}</div>
+                <input className="input" value={(flavorForm as any)[k]} onChange={e => setFlavorForm(v => ({ ...v, [k]: e.target.value }))} />
               </div>
             ))}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
               <button className="btn" onClick={() => setFlavorModal(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveFlavor} disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+              <button className="btn btn-primary" onClick={saveFlavor} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>
@@ -611,116 +499,29 @@ export default function DashboardPage() {
 
       {/* Flavor Modal - Delete */}
       {flavorModal === 'delete' && selectedFlavor && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-        }}>
-          <div style={{
-            background: 'var(--bg-panel)', border: '1px solid var(--border)',
-            borderRadius: '8px', width: '380px', padding: '24px',
-          }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
-              Delete Flavor?
-            </div>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: '8px', width: '380px', padding: '24px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>Delete Flavor?</div>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
               Delete <span style={{ color: 'var(--accent)' }}>{selectedFlavor.slug}</span> and all its steps? This cannot be undone.
             </div>
-            {error && (
-              <div style={{
-                background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px',
-                marginBottom: '12px', fontSize: '12px',
-              }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px', marginBottom: '12px', fontSize: '12px' }}>{error}</div>}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setFlavorModal(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={deleteFlavor} disabled={saving}>
-                {saving ? 'Deleting…' : 'Delete'}
-              </button>
+              <button className="btn btn-danger" onClick={deleteFlavor} disabled={saving}>{saving ? 'Deleting…' : 'Delete'}</button>
             </div>
           </div>
         </div>
       )}
-const duplicateFlavor = async () => {
-  if (!selectedFlavor) return;
-
-  setSaving(true);
-  setError("");
-
-  const newSlug = `${selectedFlavor.slug}-copy-${Date.now().toString().slice(-4)}`;
-
-  const { data: newFlavor, error: flavorErr } = await supabase
-    .from("humor_flavors")
-    .insert({
-      slug: newSlug,
-      description: selectedFlavor.description,
-      created_by_user_id: userId,
-      modified_by_user_id: userId,
-    })
-    .select()
-    .single();
-
-  if (flavorErr) {
-    setError(flavorErr.message);
-    setSaving(false);
-    return;
-  }
-
-  if (steps.length > 0) {
-    const newSteps = steps.map((s) => ({
-      humor_flavor_id: newFlavor.id,
-      description: s.description,
-      llm_system_prompt: s.llm_system_prompt,
-      llm_user_prompt: s.llm_user_prompt,
-      llm_temperature: s.llm_temperature,
-      llm_model_id: s.llm_model_id,
-      llm_input_type_id: s.llm_input_type_id,
-      llm_output_type_id: s.llm_output_type_id,
-      humor_flavor_step_type_id: s.humor_flavor_step_type_id,
-      order_by: s.order_by,
-      created_by_user_id: userId,
-      modified_by_user_id: userId,
-    }));
-
-    const { error: stepsErr } = await supabase
-      .from("humor_flavor_steps")
-      .insert(newSteps);
-
-    if (stepsErr) {
-      setError(stepsErr.message);
-      setSaving(false);
-      return;
-    }
-  }
-
-  setSaving(false);
-  await loadFlavors();
-  alert(`Duplicated as "${newSlug}"!`);
-}
 
       {/* Step Modal - Create/Edit */}
       {(stepModal === 'create' || stepModal === 'edit') && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-        }}>
-          <div style={{
-            background: 'var(--bg-panel)', border: '1px solid var(--border)',
-            borderRadius: '8px', width: '540px', padding: '24px',
-            maxHeight: '85vh', overflowY: 'auto',
-          }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: '8px', width: '540px', padding: '24px', maxHeight: '85vh', overflowY: 'auto' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '13px', fontWeight: '600', marginBottom: '20px' }}>
               {stepModal === 'create' ? 'New Step' : 'Edit Step'}
             </div>
-            {error && (
-              <div style={{
-                background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px',
-                marginBottom: '16px', fontSize: '12px', borderRadius: '4px',
-              }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px', marginBottom: '16px', fontSize: '12px', borderRadius: '4px' }}>{error}</div>}
             {([
               ['description', 'Description', false],
               ['llm_system_prompt', 'System Prompt', true],
@@ -732,33 +533,16 @@ const duplicateFlavor = async () => {
               ['llm_output_type_id', 'Output Type ID', false],
             ] as [string, string, boolean][]).map(([k, l, isTextarea]) => (
               <div key={k} style={{ marginBottom: '12px' }}>
-                <div style={{
-                  fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '4px',
-                  letterSpacing: '0.1em', textTransform: 'uppercase',
-                }}>
-                  {l}
-                </div>
-                {isTextarea ? (
-                  <textarea
-                    className="input"
-                    value={(stepForm as any)[k]}
-                    onChange={e => setStepForm(v => ({ ...v, [k]: e.target.value }))}
-                    style={{ minHeight: '100px' }}
-                  />
-                ) : (
-                  <input
-                    className="input"
-                    value={(stepForm as any)[k]}
-                    onChange={e => setStepForm(v => ({ ...v, [k]: e.target.value }))}
-                  />
-                )}
+                <div style={{ fontSize: '10px', color: 'var(--text-dimmer)', marginBottom: '4px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{l}</div>
+                {isTextarea
+                  ? <textarea className="input" value={(stepForm as any)[k]} onChange={e => setStepForm(v => ({ ...v, [k]: e.target.value }))} style={{ minHeight: '100px' }} />
+                  : <input className="input" value={(stepForm as any)[k]} onChange={e => setStepForm(v => ({ ...v, [k]: e.target.value }))} />
+                }
               </div>
             ))}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
               <button className="btn" onClick={() => setStepModal(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveStep} disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+              <button className="btn btn-primary" onClick={saveStep} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>
@@ -766,33 +550,16 @@ const duplicateFlavor = async () => {
 
       {/* Step Modal - Delete */}
       {stepModal === 'delete' && selectedStep && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-        }}>
-          <div style={{
-            background: 'var(--bg-panel)', border: '1px solid var(--border)',
-            borderRadius: '8px', width: '360px', padding: '24px',
-          }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
-              Delete Step?
-            </div>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: '8px', width: '360px', padding: '24px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>Delete Step?</div>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
               Delete <span style={{ color: 'var(--accent)' }}>Step {selectedStep.order_by}</span>? This cannot be undone.
             </div>
-            {error && (
-              <div style={{
-                background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px',
-                marginBottom: '12px', fontSize: '12px',
-              }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ background: 'var(--red-dim)', color: 'var(--red)', padding: '8px 12px', marginBottom: '12px', fontSize: '12px' }}>{error}</div>}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setStepModal(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={deleteStep} disabled={saving}>
-                {saving ? 'Deleting…' : 'Delete'}
-              </button>
+              <button className="btn btn-danger" onClick={deleteStep} disabled={saving}>{saving ? 'Deleting…' : 'Delete'}</button>
             </div>
           </div>
         </div>
